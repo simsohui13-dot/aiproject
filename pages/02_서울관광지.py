@@ -12,10 +12,10 @@ st.set_page_config(
 # 제목 및 소개
 st.title("🇰🇷 외국인이 가장 사랑하는 서울 주요 관광지 TOP 10")
 st.markdown(
-    "스트림릿(Streamlit)과 Pydeck을 활용해 서울의 대표적인 외국인 핫플 위치와 설명을 한눈에 볼 수 있는 대시보드입니다."
+    "스트림릿(Streamlit)과 Pydeck을 활용해 서울의 대표적인 외국인 핫플 위치와 상세 설명, 그리고 1박 2일 추천 일정을 한눈에 볼 수 있는 대시보드입니다."
 )
 
-# 외국인 선호 서울 관광지 Top 10 데이터 (위도, 경도, 이름, 설명)
+# 외국인 선호 서울 관광지 Top 10 데이터
 tourist_spots = [
     {
         "name": "1. 경복궁",
@@ -81,29 +81,26 @@ tourist_spots = [
 
 df = pd.DataFrame(tourist_spots)
 
-# Pydeck을 이용한 서울 지도 설정 (중심 좌표: 서울시청 기준)
+# Pydeck을 이용한 서울 지도 설정
 view_state = pdk.ViewState(
     latitude=37.555, longitude=126.97, zoom=11.5, pitch=30
 )
 
-# 지도 위에 표시할 마커 레이어 설정
 layer = pdk.Layer(
     "ScatterplotLayer",
     data=df,
     get_position=["lon", "lat"],
-    get_color="[200, 30, 0, 160]",  # 붉은색 계열 마커
-    get_radius=300,  # 마커 크기
+    get_color="[200, 30, 0, 160]",
+    get_radius=300,
     pickable=True,
     auto_highlight=True,
 )
 
-# 툴팁 설정 (마우스 오버시 이름 표시)
 tooltip = {
     "html": "<b>{name}</b>",
     "style": {"background": "grey", "color": "white"},
 }
 
-# 지도 렌더링
 r = pdk.Deck(
     layers=[layer],
     initial_view_state=view_state,
@@ -114,18 +111,91 @@ r = pdk.Deck(
 st.subheader("📍 서울 관광지 지도 (마우스로 위치를 확인해보세요)")
 st.pydeck_chart(r)
 
-# --- 지도 밑 관광지 상세 설명 섹션 ---
+# --- 관광지 상세 설명 섹션 ---
 st.markdown("---")
 st.subheader("📖 관광지 상세 설명 가이드")
 
-# 2열 레이아웃으로 깔끔하게 설명 배치
 col1, col2 = st.columns(2)
-
 for i, row in df.iterrows():
-    # 짝수 번호는 왼쪽 컬럼, 홀수 번호는 오른쪽 컬럼에 배치
     target_col = col1 if i % 2 == 0 else col2
     with target_col:
         with st.container(border=True):
             st.markdown(f"### {row['name']}")
             st.write(row["desc"])
             st.caption(f"위도: {row['lat']} | 경도: {row['lon']}")
+
+# --- 1박 2일 추천 일정표 섹션 ---
+st.markdown("---")
+st.subheader("📅 1박 2일 추천 코스 일정표 (오전 9시 ~ 저녁 8시)")
+st.markdown(
+    "동선을 최적화하여 10대 관광지를 알차게 둘러볼 수 있는 시간대별 일정표입니다."
+)
+
+# 1일차 데이터
+schedule_day1 = [
+    {
+        "시간": "09:00 - 11:30",
+        "일정": "1. 경복궁 관람 및 한복 체험",
+        "설명": "조선 법궁 산책 및 아름다운 전통 궁궐 건축 감상",
+    },
+    {
+        "시간": "11:30 - 13:00",
+        "일정": "2. 북촌 한옥마을 산책",
+        "설명": "전통 기와 골목길 포토스팟 투어 및 주변 한식 점심",
+    },
+    {
+        "시간": "13:30 - 15:30",
+        "일정": "8. 국립중앙박물관 탐방",
+        "설명": "한국의 깊은 역사와 문화유산 관람 (실내 전시)",
+    },
+    {
+        "시간": "16:00 - 18:00",
+        "일정": "4. 명동 쇼핑가 탐방",
+        "설명": "K-뷰티 쇼핑 및 다양한 길거리 간식 체험",
+    },
+    {
+        "시간": "18:00 - 20:00",
+        "일정": "5. 동대문디자인플라자(DDP) & 저녁",
+        "설명": "futuristic한 건축물 구경 및 인근 맛집에서 저녁 식사",
+    },
+]
+
+# 2일차 데이터
+schedule_day2 = [
+    {
+        "시간": "09:30 - 11:30",
+        "일정": "7. 롯데월드타워 (서울스카이)",
+        "설명": "세계 최고 수준 전망대에서 서울 전경 조망",
+    },
+    {
+        "시간": "11:30 - 13:30",
+        "일정": "송파 랜드마크 점심 식사",
+        "설명": "롯데월드몰 내부에서 맛있는 점심 및 휴식",
+    },
+    {
+        "시간": "14:00 - 16:30",
+        "일정": "3. N서울타워 (남산타워)",
+        "설명": "남산 케이블카 탑승 및 360도 서울 전경 감상",
+    },
+    {
+        "시간": "17:00 - 18:30",
+        "일정": "10. 이태원 & 해방촌 거리",
+        "설명": "이국적인 다문화 거리 구경 및 트렌디한 카페 방문",
+    },
+    {
+        "시간": "18:30 - 20:00",
+        "일정": "9. 반포 한강공원 (야경 & 치맥)",
+        "설명": "달빛무지개분수 감상 및 한강 야경과 함께 치맥 즐기기",
+    },
+]
+
+# 탭을 활용해 1일차와 2일차 분리 표기
+tab1, tab2 = st.tabs(["🌞 1일차 일정 (도심·고궁·쇼핑 코스)", "🌙 2일차 일정 (타워·공원·야경 코스)"])
+
+with tab1:
+    df_d1 = pd.DataFrame(schedule_day1)
+    st.table(df_d1)
+
+with tab2:
+    df_d2 = pd.DataFrame(schedule_day2)
+    st.table(df_d2)
