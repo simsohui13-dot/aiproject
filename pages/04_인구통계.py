@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import matplotlib.ticker as ticker
 import platform
 import os
 
 # 1. 페이지 설정
 st.set_page_config(
-    page_title="서울시 연령별 인구수 시각화 대시보드",
+    page_title="서울시 연령대별 인구 상위 행정구 분석",
     layout="wide"
 )
 
@@ -24,10 +24,9 @@ def set_font():
 
 set_font()
 
-# 3. 데이터 로드 (pages 폴더 기준 상위 폴더의 poopulation.csv 경로 지정)
+# 3. 데이터 로드 (상위 폴더의 poopulation.csv 경로 지정)
 @st.cache_data
 def load_data():
-    # pages 폴더 안에 있으므로 상위 폴더(../)로 이동하여 파일 로드
     file_path = os.path.join(os.path.dirname(__file__), '..', 'poopulation.csv')
     df = pd.read_csv(file_path, encoding='cp949')
     return df
@@ -38,17 +37,17 @@ except Exception as e:
     st.error(f"데이터 파일을 불러오는 중 오류가 발생했습니다: {e}")
     st.stop()
 
-st.title("📊 서울시 지역별·성별·연도별 연령별 인구 꺾은선 그래프")
-st.markdown("사이드바에서 **행정구역, 성별, 연도**를 선택하면 해당 조건의 연령별 인구수 변화를 핫핑크 그래프로 확인할 수 있습니다.")
+st.title("🏙️ 연령대별 인구 상위 행정구 막대 그래프 분석")
+st.markdown("연도, 성별, 그리고 **10살 단위 연령대**를 선택하면 해당 연령 인구가 많은 순서대로 행정구 막대 그래프를 그려줍니다.")
 
-# 4. 사이드바 필터 설정
+# 4. 사이드바 설정
 st.sidebar.header("🔍 조회 옵션 선택")
 
-# 행정구역 선택
-regions = df['행정구역'].unique()
-selected_region = st.sidebar.selectbox("행정구역 선택", regions)
+# 연도 선택 (2020 ~ 2025)
+years = [str(y) for y in range(2020, 2026)]
+selected_year = st.sidebar.selectbox("연도 선택", years, index=len(years)-1) # 기본값 2025년
 
-# 성별 선택 (총인구수, 남, 여)
+# 성별 선택
 gender_options = {
     "총인구": "거주자",
     "남성": "남_거주자",
@@ -57,58 +56,96 @@ gender_options = {
 selected_gender_label = st.sidebar.selectbox("성별 선택", list(gender_options.keys()))
 gender_code = gender_options[selected_gender_label]
 
-# 연도 선택 (2020 ~ 2025)
-years = [str(y) for y in range(2020, 2026)]
-selected_year = st.sidebar.selectbox("연도 선택", years)
-
-# 5. 데이터 필터링 및 전처리
-age_columns_prefix = f"{selected_year}_{gender_code}_"
-target_cols = [
+# 연령대 옵션 동적 추출
+sample_prefix = f"{selected_year}_{gender_code}_"
+sample_cols = [
     col for col in df.columns 
-    if col.startswith(age_columns_prefix) and '세' in col and '총인구수' not in col and '연령구간인구수' not in col
+    if col.startswith(sample_prefix) and '세' in col and '총인구수' not in col and '연령구간인구수' not in col
 ]
 
-region_row = df[df['행정구역'] == selected_region]
+# 연령대 컬럼이 제대로 안 잡힐 경우를 대비한 안전 장치
+if not sample_cols:
+    st.error(f"[{selected_year년 / selected_gender_label}]에 해당하는 연령별 데이터를 찾을 수 없습니다.")
+    st.stop()
 
-if not region_row.empty and target_cols:
-    ages = [col.split('_')[-1] for col in target_cols]
-    
-    populations = []
-    for col in target_cols:
-        val = region_row[col].values[0]
-        if isinstance(val, str):
-            val = val.replace(',', '')
-        populations.append(int(val))
-    
-    # 6. Matplotlib 꺾은선 그래프 시각화
-    fig, ax = plt.subplots(figsize=(10, 5))
-    
-    # 핫핑크 색상 (deeppink) 및 마커 설정
-    ax.plot(ages, populations, marker='o', color='deeppink', linewidth=2.5, markersize=6, label=f"{selected_region} ({selected_year}년)")
-    
-    ax.set_title(f"[{selected_year}년] {selected_region} - {selected_gender_label} 연령별 인구수", fontsize=14, pad=15)
-    ax.set_xlabel("나이 (연령대)", fontsize=12)
+age_options = [col.split('_')[-1] for col in sample_cols]
+selected_age = st.sidebar.selectbox("연령대 선택 (10살 단위)", age_options)
+
+# 5. 데이터 가공 및 필터링 (에러 방지 로직 적용)
+# 서울특별시 전체 합계 행('서울특별시  (1100000000)')을 제외한 자치구들만 안전하게 필터링
+sub_df = df[df['행정구역'].str.contains('구') & ~df['행정구역'].str.contains('서울특별시$')].copy()
+
+if sub_df.empty:
+    # 만약 필터링 결과가 없다면 전체 데이터 사용
+    sub_df = df.copy()
+
+target_col = f"{selected_year}_{gender_code}_{selected_age}"
+
+if target_col not in sub_df.columns:
+    st.error(f"지정한 데이터 컬럼({target_col})이 존재하지 않습니다.")
+    st.stop()
+
+# 인구수 데이터를 숫자로 변환 (콤마 제거)
+def clean_population(val):
+    if pd.isna(val):
+        return 0
+    if isinstance(val, str):
+        val = val.replace(',', '').strip()
+        return int(val) if val.isdigit() else 0
+    return int(val)
+
+sub_df['인구수'] = sub_df[target_col].apply(clean_population)
+
+# 행정구역 이름 정렬 (예: '서울특별시 종로구 (1111000000)' -> '종로구')
+def parse_region_name(x):
+    parts = x.split()
+    if len(parts) >= 2:
+        return parts[1]
+    return x
+
+sub_df['구 이름'] = sub_df['행정구역'].apply(parse_region_name)
+
+# 인구수 기준으로 내림차순 정렬
+sub_df = sub_df.sort_values(by='인구수', ascending=False).reset_index(drop=True)
+
+# 6. 상위 몇 개 구를 보여줄지 선택
+top_n = st.sidebar.slider("출력할 행정구 개수 선택", min_value=5, max_value=len(sub_df), value=min(10, len(sub_df)))
+plot_df = sub_df.head(top_n)
+
+# 7. 핫핑크 색상 막대그래프 시각화
+st.subheader(f"📊 [{selected_year}년] {selected_gender_label} - '{selected_age}' 인구 상위 {top_n}개 행정구")
+
+if plot_df.empty or plot_df['인구수'].sum() == 0:
+    st.warning("선택한 조건에 해당하는 인구 데이터가 존재하지 않습니다.")
+else:
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # 핫핑크 컬러 적용 ('deeppink')
+    bars = ax.bar(plot_df['구 이름'], plot_df['인구수'], color='deeppink', alpha=0.85, edgecolor='black', linewidth=0.6)
+
+    ax.set_title(f"{selected_year}년 {selected_age} 인구 상위 행정구 현황", fontsize=15, pad=15, fontweight='bold')
+    ax.set_xlabel("행정구", fontsize=12)
     ax.set_ylabel("인구수 (명)", fontsize=12)
-    
-    # 가로축(X축) 10살 단위 구분선 (격자 표시)
-    ax.set_xticks(range(len(ages)))
-    ax.set_xticklabels(ages, rotation=45)
-    ax.grid(axis='x', linestyle='--', alpha=0.7)
-    
-    # 세로축(Y축) 1000만 단위 포맷팅 및 격자선 설정
-    import matplotlib.ticker as ticker
+
+    # X축 레이블 45도 회전
+    plt.xticks(rotation=45, ha='right', fontsize=11)
+
+    # 세로축(Y축) 콤마 포맷팅 및 격자선 추가
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x):,}'))
     ax.grid(axis='y', linestyle='--', alpha=0.7)
-    
-    ax.legend()
+
+    # 막대 위에 정확한 인구수 숫자 표출
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(f'{height:,}',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),  
+                    textcoords="offset points",
+                    ha='center', va='bottom', fontsize=9, rotation=0)
+
     plt.tight_layout()
-    
-    # 스트림릿에 그래프 출력
     st.pyplot(fig)
-    
-    # 상세 데이터 테이블 표시
-    with st.expander("📋 연령별 상세 데이터 보기"):
-        chart_df = pd.DataFrame({"연령대": ages, "인구수": populations})
-        st.dataframe(chart_df, use_container_width=True)
-else:
-    st.warning("선택한 조건에 해당하는 데이터가 없습니다.")
+
+# 8. 하단 데이터 테이블 제공
+with st.expander("📋 전체 자치구 순위 데이터 표로 보기"):
+    st.dataframe(sub_df[['구 이름', '인구수']], use_container_width=True)
