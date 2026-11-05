@@ -45,7 +45,7 @@ st.sidebar.header("🔍 조회 옵션 선택")
 
 # 연도 선택 (2020 ~ 2025)
 years = [str(y) for y in range(2020, 2026)]
-selected_year = st.sidebar.selectbox("연도 선택", years, index=len(years)-1) # 기본값 2025년
+selected_year = st.sidebar.selectbox("연도 선택", years, index=len(years)-1)
 
 # 성별 선택
 gender_options = {
@@ -63,20 +63,18 @@ sample_cols = [
     if col.startswith(sample_prefix) and '세' in col and '총인구수' not in col and '연령구간인구수' not in col
 ]
 
-# 연령대 컬럼이 제대로 안 잡힐 경우를 대비한 안전 장치
+# 연령대 컬럼 검사 (오타 수정된 부분)
 if not sample_cols:
-    st.error(f"[{selected_year년 / selected_gender_label}]에 해당하는 연령별 데이터를 찾을 수 없습니다.")
+    st.error(f"[{selected_year}년 {selected_gender_label}]에 해당하는 연령별 데이터를 찾을 수 없습니다.")
     st.stop()
 
 age_options = [col.split('_')[-1] for col in sample_cols]
 selected_age = st.sidebar.selectbox("연령대 선택 (10살 단위)", age_options)
 
-# 5. 데이터 가공 및 필터링 (에러 방지 로직 적용)
-# 서울특별시 전체 합계 행('서울특별시  (1100000000)')을 제외한 자치구들만 안전하게 필터링
-sub_df = df[df['행정구역'].str.contains('구') & ~df['행정구역'].str.contains('서울특별시$')].copy()
+# 5. 데이터 가공 및 필터링
+sub_df = df[df['행정구역'].str.contains('구') & ~df['행정구역'].str.contains('서울특별시\$')].copy()
 
 if sub_df.empty:
-    # 만약 필터링 결과가 없다면 전체 데이터 사용
     sub_df = df.copy()
 
 target_col = f"{selected_year}_{gender_code}_{selected_age}"
@@ -96,7 +94,7 @@ def clean_population(val):
 
 sub_df['인구수'] = sub_df[target_col].apply(clean_population)
 
-# 행정구역 이름 정렬 (예: '서울특별시 종로구 (1111000000)' -> '종로구')
+# 행정구역 이름 정렬
 def parse_region_name(x):
     parts = x.split()
     if len(parts) >= 2:
@@ -143,9 +141,4 @@ else:
                     textcoords="offset points",
                     ha='center', va='bottom', fontsize=9, rotation=0)
 
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# 8. 하단 데이터 테이블 제공
-with st.expander("📋 전체 자치구 순위 데이터 표로 보기"):
-    st.dataframe(sub_df[['구 이름', '인구수']], use_container_width=True)
+    plt
