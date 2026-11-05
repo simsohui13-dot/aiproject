@@ -56,14 +56,14 @@ gender_options = {
 selected_gender_label = st.sidebar.selectbox("성별 선택", list(gender_options.keys()))
 gender_code = gender_options[selected_gender_label]
 
-# 연령대 옵션 동적 추출
-sample_prefix = f"{selected_year}_{gender_code}_"
+# 연령대 옵션 동적 추출 (CSV 파일 형식에 맞춰 '년' 문자 추가)
+sample_prefix = f"{selected_year}년_{gender_code}_"
 sample_cols = [
     col for col in df.columns 
     if col.startswith(sample_prefix) and '세' in col and '총인구수' not in col and '연령구간인구수' not in col
 ]
 
-# 연령대 컬럼 검사 (오타 수정된 부분)
+# 연령대 컬럼 검사
 if not sample_cols:
     st.error(f"[{selected_year}년 {selected_gender_label}]에 해당하는 연령별 데이터를 찾을 수 없습니다.")
     st.stop()
@@ -72,12 +72,12 @@ age_options = [col.split('_')[-1] for col in sample_cols]
 selected_age = st.sidebar.selectbox("연령대 선택 (10살 단위)", age_options)
 
 # 5. 데이터 가공 및 필터링
-sub_df = df[df['행정구역'].str.contains('구') & ~df['행정구역'].str.contains('서울특별시\$')].copy()
+sub_df = df[df['행정구역'].str.contains('구') & ~df['행정구역'].str.contains('서울특별시$')].copy()
 
 if sub_df.empty:
     sub_df = df.copy()
 
-target_col = f"{selected_year}_{gender_code}_{selected_age}"
+target_col = f"{selected_year}년_{gender_code}_{selected_age}"
 
 if target_col not in sub_df.columns:
     st.error(f"지정한 데이터 컬럼({target_col})이 존재하지 않습니다.")
@@ -141,4 +141,9 @@ else:
                     textcoords="offset points",
                     ha='center', va='bottom', fontsize=9, rotation=0)
 
-    plt
+    plt.tight_layout()
+    st.pyplot(fig)
+
+# 8. 하단 데이터 테이블 제공
+with st.expander("📋 전체 자치구 순위 데이터 표로 보기"):
+    st.dataframe(sub_df[['구 이름', '인구수']], use_container_width=True)
