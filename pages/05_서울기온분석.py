@@ -167,6 +167,79 @@ try:
         
         st.pyplot(fig)
 
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# 1. 페이지 설정
+st.set_page_config(
+    page_title="서울 기온 분석 대시보드",
+    page_icon="🌡️",
+    layout="wide"
+)
+
+st.title("🌡️ 서울 기온 다차원 분석 대시보드")
+st.markdown("데이터를 바탕으로 월별, 연도별, 그리고 두 연도 간 비교 시각화를 제공합니다.")
+
+# 2. 데이터 로드 함수 (캐싱 및 한글 깨짐 방지)
+@st.cache_data
+def load_data():
+    file_path = "temperature.csv"
+    try:
+        df = pd.read_csv(file_path, encoding='cp949')
+    except UnicodeDecodeError:
+        df = pd.read_csv(file_path, encoding='utf-8')
+    return df
+
+try:
+    df = load_data()
+    
+    # 데이터 전처리: '일시' 컬럼을 날짜 형식으로 변환 및 연도/월 분리
+    df['일시_dt'] = pd.to_datetime(df['일시'], format='%b-%y', errors='coerce')
+    if df['일시_dt'].isnull().all():
+        df['일시_dt'] = pd.to_datetime(df['일시'], errors='coerce')
+        
+    df['연도'] = df['일시_dt'].dt.year
+    df['월'] = df['일시_dt'].dt.month
+
+    # Matplotlib 한글 폰트 깨짐 방지 설정
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # 3. 사이드바 메뉴 선택
+    st.sidebar.header("📊 분석 메뉴 선택")
+    menu = st.sidebar.radio(
+        "원하는 분석 항목을 선택하세요:",
+        [
+            "1. 월별 평균기온 (1~12월)", 
+            "2. 특정 연도 최저·최고기온", 
+            "3. 2개 연도 비교 분석"
+        ]
+    )
+
+    # -------------------------------------------------------------------------
+    # [기능 1] 가로축이 1월부터 12월이고, 서울의 월별 평균기온 그래프
+    # -------------------------------------------------------------------------
+    if menu == "1. 월별 평균기온 (1~12월)":
+        st.subheader("📈 서울 월별 평균기온 그래프 (1월 ~ 12월)")
+        st.markdown("모든 연도의 데이터를 월별(1~12월)로 평균 내어 기온 변화를 살펴봅니다.")
+        
+        monthly_avg = df.groupby('월')['평균기온(℃)'].mean().reset_index()
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(monthly_avg['월'], monthly_avg['평균기온(℃)'], color='#FF5733', marker='o', linewidth=2.5, label='월별 평균기온')
+        
+        ax.set_title("서울 월별 평균기온 분석", fontsize=14, fontweight='bold', pad=15)
+        ax.set_xlabel("월 (Month)", fontsize=12)
+        ax.set_ylabel("평균기온 (℃)", fontsize=12)
+        ax.set_xticks(range(1, 13))
+        ax.set_xticklabels([f"{i}월" for i in range(1, 13)])
+        ax.legend(loc='upper left')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+        st.pyplot(fig)
+
     # -------------------------------------------------------------------------
     # [기능 2] 연도 1개 선택하면 연도별 최저기온과 최고기온 그래프 (한 그래프)
     # -------------------------------------------------------------------------
@@ -230,10 +303,5 @@ try:
 
 except FileNotFoundError:
     st.error("🚨 `temperature.csv` 파일을 찾을 수 없습니다. GitHub 저장소에 파일을 업로드했는지 확인해주세요.")
-except Exception as e:
-    st.error(f"오류가 발생했습니다: {e}")
-
-except FileNotFoundError:
-    st.error("🚨 `temperature.csv` 파일을 찾을 수 없습니다. GitHub 저장소 루트 디렉토리에 파일을 업로드했는지 확인해주세요.")
 except Exception as e:
     st.error(f"오류가 발생했습니다: {e}")
