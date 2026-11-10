@@ -145,3 +145,193 @@ with col_c:
     * **미래 예측 특징:** RBF 커널 특성상 관측 데이터 범위(1907~2025)에서 멀어질수록 데이터 영향력이 줄어들어 **전체 데이터의 평균값 위치로 점차 수렴(Flattening)**하는 곡선을 보여줍니다.
     """)
 
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+
+# 한글 폰트 및 마이너스 기호 깨짐 방지
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
+
+st.set_page_config(page_title="월별 기온 결측치 처리 및 머신러닝 예측", layout="wide")
+
+st.title("🌡️ 결측치 처리 방식 및 머신러닝 알고리즘에 따른 기온 예측 비교")
+st.markdown("""
+이 앱은 **1907년부터 2025년까지의 기온 데이터**를 바탕으로, 
+1. **결측치 처리 방식**(제거, 중앙값 대체, 선형 보관법)과 
+2. **머신러닝 예측 알고리즘**(선형 회귀, 랜덤 포레스트, SVR)에 따라 미래 기온 예측 결과가 어떻게 달라지는지 시각적으로 비교합니다.
+""")
+
+# 데이터 로드 함수
+@st.cache_data
+def load_data():
+    try:
+        df = pd.read_csv('temperature.csv', encoding='utf-8')
+    except UnicodeDecodeError:
+        df = pd.read_csv('temperature.csv', encoding='cp949')
+    
+    # 1907년 10월부터 시작하는 날짜 데이터 생성 및 연도/월 추출
+    df['Date'] = pd.date_range(start='1907-10-01', periods=len(df), freq='MS')
+    df['Year'] = df['Date'].dt.year
+    df['Month'] = df['Date'].dt.month
+    
+    # 1907년부터 2025년까지 데이터 필터링
+    df = df[(df['Year'] >= 1907) & (df['Year'] <= 2025)]
+    return df
+
+try:
+    data = load_data()
+except Exception as e:
+    st.error(f"데이터 파일을 불러오는 데 실패했습니다: {e}")
+    st.stop()
+
+# ---------------------------------------------------------
+# 사이드바 사용자 입력
+# ---------------------------------------------------------
+st.sidebar.header("⚙️ 분석 옵션 설정")
+
+selected_month = st.sidebar.selectbox("1️⃣ 분석 및 예측할 월(Month) 선택:", list(range(1, 13)), index=7)
+
+# 결측치 처리 방식 선택
+missing_method = st.sidebar.radio(
+    "2️⃣ 결측치 처리 방식 선택:",
+    options=["1. 제거 (Drop)", "2. 중앙값으로 대체 (Median)", "3. 선형 보관법 (Interpolation)"],
+    index=2
+)
+
+# 알고리즘 선택 (다중 선택 가능하도록 체크박스 또는 멀티셀렉트 제공)
+st.sidebar.markdown("3️⃣ **비교할 알고리즘 선택 (다중 선택 가능)**")
+use_linear = st.sidebar.checkbox("선형 회귀 (Linear Regression)", value=True)
+use_rf = st.sidebar.checkbox("랜덤 포레스트 (Random Forest)", value=True)
+use_svr = st.sidebar.checkbox("서포트 벡터 회귀 (SVR)", value=True)
+
+predict_target_year = st.sidebar.slider("4️⃣ 예측할 미래 연도 선택:", min_value=2026, max_value=2100, value=2050, step=1)
+
+# ---------------------------------------------------------
+# 데이터 전처리 및 결측치 처리 로직
+# ---------------------------------------------------------
+# 특정 월 데이터 추출
+month_df = data[data['Month'] == selected_month].sort_values('Year').copy()
+temp_series = month_df['평균기온(℃)']
+
+# 결측치 처리 적용
+if "제거" in missing_method:
+    month_df_processed = month_df.dropna(subset=['평균기온(℃)'])
+    handling_desc = "결측치가 포함된 연도의 데이터를 완전히 제외하고 분석합니다."
+elif "중앙값" in missing_method:
+    median_val = temp_series.median()
+    month_df_processed = month_df.copy()
+    month_df_processed['평균기온(℃)'] = month_df_processed['평균기온(℃)'].fillna(median_val)
+    handling_desc = f"결측치를 해당 월 전체 기온의 중앙값({median_val:.2f}℃)으로 대체하여 분석합니다."
+else: # 선형 보관법
+    month_df_processed = month_df.copy()
+    month_df_processed['평균기온(℃)'] = month_df_processed['평균기온(℃)'].interpolate(method='linear')
+    # 혹시 양끝에 남는 결측치가 있다면 ffill/bfill 보완
+    month_df_processed['평균기온(℃)'] = month_df_processed['평균기온(℃)'].ffill().bfill()
+    handling_desc = "앞뒤 데이터의 선형 경향을 이용해 비어 있는 결측치 구간을 부드럽게 메워 분석합니다."
+
+# 학습 데이터 분할 (X: 연도, y: 평균기온)
+X = month_df_processed[['Year']].values
+y = month_df_processed['평균기온(℃)'].values
+
+# 모델 학습
+future_years = np.arange(1907, predict_target_year + 1).reshape(-1, 1)
+predictions = {}
+
+if use_linear:
+    lr = LinearRegression()
+    lr.fit(X, y)
+    predictions['Linear Regression'] = lr.predict(future_years)
+
+if use_rf:
+    rf = RandomForestRegressor(n_estimators=100, random_state=42)
+    rf.fit(X, y)
+    predictions['Random Forest'] = rf.predict(future_years)
+
+if use_svr:
+    svr = SVR(kernel='rbf', C=100, gamma=0.001)
+    svr.fit(X, y)
+    predictions['SVR'] = svr.predict(future_years)
+
+# ---------------------------------------------------------
+# 시각화 (Graph)
+# ---------------------------------------------------------
+st.subheader(f"📊 [{selected_month}월] 결측치 처리 방식 및 알고리즘별 예측 비교 (1907 ~ {predict_target_year}년)")
+st.info(f"💡 **현재 적용된 결측치 처리:** {handling_desc}")
+
+fig, ax = plt.subplots(figsize=(13, 6))
+
+# 실제 데이터 산점도 (결측치 처리 반영된 데이터)
+ax.scatter(X, y, color='black', alpha=0.5, label='Processed Actual Data', zorder=3)
+
+# 알고리즘별 예측선 플롯
+colors = {'Linear Regression': 'red', 'Random Forest': 'green', 'SVR': 'blue'}
+styles = {'Linear Regression': '-', 'Random Forest': '--', 'SVR': ':'}
+
+target_idx = predict_target_year - 1907
+result_metrics = {}
+
+for algo_name, preds in predictions.items():
+    ax.plot(future_years, preds, label=algo_name, color=colors[algo_name], linestyle=styles[algo_name], linewidth=2.5)
+    result_metrics[algo_name] = preds[target_idx]
+    # 예측 목표 연도 포인트 강조
+    ax.scatter([predict_target_year], [preds[target_idx]], color=colors[algo_name], s=80, zorder=5)
+
+ax.axvline(x=predict_target_year, color='gray', linestyle='--', alpha=0.7)
+ax.axvline(x=2025, color='orange', linestyle=':', label='End of History (2025)')
+
+ax.set_title(f"Month {selected_month} Temperature Forecast ({predict_target_year}) - {missing_method}", fontsize=14, pad=12)
+ax.set_xlabel("Year", fontsize=12)
+ax.set_ylabel("Average Temperature (°C)", fontsize=12)
+ax.legend(loc='upper left', frameon=True)
+ax.grid(True, linestyle='--', alpha=0.5)
+
+st.pyplot(fig)
+
+# ---------------------------------------------------------
+# 결과 지표 요약
+# ---------------------------------------------------------
+if result_metrics:
+    st.markdown(f"### 🎯 {predict_target_year}년 {selected_month}월 알고리즘별 예측 기온")
+    cols = st.columns(len(result_metrics))
+    for col, (algo_name, val) in zip(cols, result_metrics.items()):
+        col.metric(algo_name, f"{val:.2f} °C")
+else:
+    st.warning("⚠️ 비교할 알고리즘을 사이드바에서 최소 1개 이상 선택해주세요.")
+
+st.divider()
+
+# ---------------------------------------------------------
+# 알고리즘 작동 원리 설명
+# ---------------------------------------------------------
+st.markdown("### 🧠 알고리즘 별 작동 원리 및 특징")
+
+col_a, col_b, col_c = st.columns(3)
+
+with col_a:
+    st.markdown("#### 🔴 1. 선형 회귀 (Linear Regression)")
+    st.markdown("""
+    * **그래프 형태:** 일정한 기울기를 가진 **직선**
+    * **작동 원리:** 데이터 전체의 장기적인 상승/하락 추세를 하나의 방정식($y = ax + b$)으로 학습합니다.
+    * **특징:** 결측치 처리 방식에 따라 전체 기울기($a$)가 미세하게 달라지며, 먼 미래 예측 시 지속적인 증가/감소 추세를 그대로 외삽(Extrapolation)합니다.
+    """)
+
+with col_b:
+    st.markdown("#### 🟢 2. 랜덤 포레스트 (Random Forest)")
+    st.markdown("""
+    * **그래프 형태:** 최근 구간에서 평평해지는 **계단형(Step-like)**
+    * **작동 원리:** 다수의 의사결정 나무를 결합하여 구간별 평균 규칙을 학습합니다.
+    * **특징:** 학습 범위를 벗어난 미래 구간에서는 스스로 트렌드를 연장하지 못하고, **가장 최근(2025년 부근) 학습된 구간의 평균값을 유지**하는 성질이 있습니다.
+    """)
+
+with col_c:
+    st.markdown("#### 🔵 3. 서포트 벡터 회귀 (SVR)")
+    st.markdown("""
+    * **그래프 형태:** 국소적 패턴을 반영하는 **부드러운 곡선**
+    * **작동 원리:** 데이터 간의 거리 오차(Margin)를 최소화하면서 비선형 관계를 곡선으로 피팅합니다.
+    * **특징:** RBF 커널 특성상 관측 데이터 범위에서 멀어지면 **전체 데이터의 평균 혹은 완만한 수평선 형태로 수렴**하려는 경향이 있습니다.
+    """)
