@@ -133,3 +133,86 @@ ax.legend(loc="upper left", frameon=True)
 ax.grid(True, linestyle='--', alpha=0.4)
 
 st.pyplot(fig)
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.inspection import DecisionBoundaryDisplay
+
+# 1. 페이지 기본 설정
+st.set_page_config(page_title="멀티 알고리즘 붓꽃 예측기", page_icon="🌸", layout="centered")
+st.title("🌸 붓꽃(Iris) 품종 예측 및 알고리즘 비교 시각화")
+st.write("사용자가 원하는 분류 알고리즘을 선택하고, 꽃잎 크기를 입력해 품종이 어떻게 분류되는지 확인해 보세요.")
+
+# 2. 데이터 로드 및 캐싱
+@st.cache_data
+def load_data():
+    try:
+        df = pd.read_csv("iris.csv", encoding="cp949")
+    except UnicodeDecodeError:
+        df = pd.read_csv("iris.csv", encoding="utf-8")
+    return df
+
+df = load_data()
+
+# 특성과 타겟 분리 (꽃잎길이, 꽃잎너비 사용)
+X = df[['꽃잎길이', '꽃잎너비']]
+y = df['품종']
+
+species_list = sorted(y.unique())
+species_to_num = {name: idx for idx, name in enumerate(species_list)}
+y_num = y.map(species_to_num)
+
+# 3. 사이드바 - 알고리즘 선택 및 설명
+st.sidebar.header("⚙️ 설정 패널")
+algo_option = st.sidebar.selectbox(
+    "분류 알고리즘 선택",
+    ("랜덤 포레스트 (Random Forest)", "서포트 벡터 머신 (SVM)", "K-최근접 이웃 (KNN)")
+)
+
+st.sidebar.divider()
+st.sidebar.subheader("📖 알고리즘 설명")
+
+if algo_option == "랜덤 포레스트 (Random Forest)":
+    st.sidebar.write(
+        "**Random Forest**\n\n"
+        "여러 개의 결정 트리(Decision Tree)를 앙상블(묶음)하여 "
+        "다수의 투표를 통해 최종 품종을 예측하는 알고리즘입니다. "
+        "과적합이 적고 정확도가 높아 가장 널리 사용됩니다."
+    )
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+elif algo_option == "서포트 벡터 머신 (SVM)":
+    st.sidebar.write(
+        "**Support Vector Machine (SVM)**\n\n"
+        "데이터들 사이의 경계선(초평면)을 찾아내어, "
+        "각 품종 간의 여백(Margin)이 최대가 되도록 분류하는 강력한 알고리즘입니다. "
+        "비선형 경계도 유연하게 잘 찾아냅니다."
+    )
+    model = SVC(kernel='rbf', C=1.0, probability=True, random_state=42)
+
+else:  # KNN
+    st.sidebar.write(
+        "**K-Nearest Neighbors (KNN)**\n\n"
+        "새로운 데이터와 가장 가까운 K개의 주변 데이터를 살펴본 후, "
+        "가장 많이 등장하는 품종으로 분류하는 직관적인 알고리즘입니다. "
+        "데이터의 지역적 특성을 잘 반영합니다."
+    )
+    model = KNeighborsClassifier(n_neighbors=5)
+
+# 4. 사용자 입력 값 범위 확장 설정 UI
+st.subheader("📏 사용자 입력 범위 및 크기 설정")
+st.write("슬라이더의 최소/최대 범위를 조정하여 데이터 범위 바깥의 가상 수치도 테스트해 볼 수 있습니다.")
+
+col_r1, col_r2 = st.columns(2)
+with col_r1:
+    min_len = st.number_input("꽃잎길이 최소값", value=float(X['꽃잎길이'].min() - 1.0), step=0.5)
+    max_len = st.number_input("꽃잎길이 최대값", value=float(X['꽃잎길이'].max() + 1.0), step=0.5)
+with col_r2:
+    min_wid = st.number_input("꽃잎너비 최소값", value=float(X['꽃잎너비'].min() - 0.5), step=0.5)
+    max_wid = st.number_input("꽃잎너비 최대값", value=float(X['꽃잎너비'].max() + 0.5), step=0.5)
